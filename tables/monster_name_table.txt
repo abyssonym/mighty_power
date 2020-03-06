@@ -1,0 +1,1 @@
+name_str,8,str

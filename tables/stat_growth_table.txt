@@ -1,0 +1,13 @@
+skill_base,1
+skill_level,1
+hp_base,1
+hp_level,1
+strength_base,1
+strength_level,1
+agility_base,1
+agility_level,1
+mana_base,1
+mana_level,1
+defense_base,1
+defense_level,1
+zeroes,4

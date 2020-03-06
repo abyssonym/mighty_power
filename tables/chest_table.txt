@@ -1,0 +1,6 @@
+eighty,1
+memory_index,1
+x,1
+y,1
+contents_lowbyte,1
+misc,1

@@ -1,0 +1,8 @@
+misc_attributes,1
+zero,1
+hp,2
+strength,1
+agility,1
+mana,1
+defense,1
+attacks_pointer,2

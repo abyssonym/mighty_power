@@ -1,0 +1,2 @@
+enemy_indexes,3,list
+unknown,2,list
