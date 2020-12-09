@@ -1,3 +1,8 @@
-unk1,4
+menu_targeting_flags,1
+counter_flags,1
+property_flags,1
+effect,1
 multiplier_element,1
-unk2,3
+misc_hits,1
+visual,1
+audio,1
