@@ -12,7 +12,8 @@ from os import path
 from time import time, sleep, gmtime
 from collections import Counter
 from itertools import combinations
-from sys import argv
+from sys import argv, exc_info
+from traceback import print_exc
 
 
 VERSION = 1
@@ -52,7 +53,7 @@ class AttributeObject(TableObject):
 
     @property
     def rank(self):
-        pass
+        return -1
 
 
 class MonsterMeatObject(TableObject): pass
@@ -142,7 +143,7 @@ class MonsterObject(TableObject):
         f = open(filename, 'r+b')
         f.seek(self.attacks_pointer | 0x30000)
         self.attribute_indexes = []
-        for i in xrange(self.num_attributes):
+        for i in range(self.num_attributes):
             self.attribute_indexes.append(ord(f.read(1)))
         f.close()
 
@@ -215,8 +216,7 @@ class MonsterObject(TableObject):
 
             f = open(filename, 'r+b')
             f.seek(self.attacks_pointer | 0x30000)
-            for i in self.attribute_indexes:
-                f.write(chr(i))
+            f.write(bytes(self.attribute_indexes))
             assert f.tell() <= addresses.monster_attacks_end
             f.close()
 
@@ -243,16 +243,16 @@ class NameMixin(TableObject):
         }
         s = ''
         for c in self.name_str:
-            if 0xd4 <= ord(c) < 0xd4 + 26:
-                s += chr(ord('a') + ord(c) - 0xd4)
-            elif 0xb0 <= ord(c) < 0xb0 + 10:
-                s += '0123456789'[ord(c) - 0xb0]
-            elif 0xba <= ord(c) < 0xba + 26:
-                s += chr(ord('A') + ord(c) - 0xba)
-            elif ord(c) in codemap:
-                s += codemap[ord(c)]
+            if 0xd4 <= c < 0xd4 + 26:
+                s += chr(ord('a') + c - 0xd4)
+            elif 0xb0 <= c < 0xb0 + 10:
+                s += '0123456789'[c - 0xb0]
+            elif 0xba <= c < 0xba + 26:
+                s += chr(ord('A') + c - 0xba)
+            elif c in codemap:
+                s += codemap[c]
             else:
-                s += '<{0:0>2x}>'.format(ord(c))
+                s += '<{0:0>2x}>'.format(c)
         return s
 
 
@@ -320,11 +320,12 @@ if __name__ == '__main__':
         clean_and_write(ALL_OBJECTS)
 
         for m in MonsterObject.ranked:
-            print m
-            print
+            print(m)
+            print()
 
         finish_interface()
 
-    except IOError, e:
-        print 'ERROR: %s' % e
-        raw_input('Press Enter to close this program. ')
+    except Exception:
+        print_exc()
+        print('ERROR:', exc_info()[1])
+        input('Press Enter to close this program. ')
