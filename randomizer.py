@@ -19,6 +19,11 @@ from traceback import print_exc
 VERSION = 1
 
 
+class VanillaObject(TableObject):
+    flag = 'v'
+    flag_description = 'nothing'
+
+
 class ChestObject(TableObject):
     @property
     def name(self):
@@ -55,8 +60,116 @@ class AttributeObject(TableObject):
     def rank(self):
         return -1
 
+    @property
+    def is_equipment(self):
+        return bool(self.property_flags & 0xf)
 
-class MonsterMeatObject(TableObject): pass
+    @cached_property
+    def is_buyable(self):
+        if self.index >= 0xFF:
+            return False
+
+        for s in ShopObject.every:
+            if self.index in s.old_data['items']:
+                return True
+
+        return False
+
+    @cached_property
+    def is_equipped_on_monster(self):
+        for m in MonsterObject.every:
+            if self.index in m.old_data['attribute_indexes']:
+                return True
+
+        return False
+
+
+class MonsterMeatObject(TableObject):
+    flag = 'e'
+    flag_description = 'monster evolutions'
+
+    @property
+    def meat_family(self):
+        return self.meat >> 4
+
+    @property
+    def meat_class(self):
+        return {0: 'A',
+                1: 'B',
+                2: 'C'}[self.meat & 0xf]
+
+    @classmethod
+    def randomize_all(cls):
+        super(MonsterMeatObject, cls).randomize_all()
+        random_degree = MonsterMeatObject.random_degree
+        families = list(range(12))
+        random.shuffle(families)
+        meat_map = {}
+        for i, f in enumerate(families):
+            meat_classes = [0, 1, 2]
+            if random.random() < (random_degree ** 0.5):
+                random.shuffle(meat_classes)
+                checks = ['a', 'b']
+                random.shuffle(checks)
+                for check in checks:
+                    if check == 'a' and (meat_classes[0] == max(meat_classes)
+                            and random.random() > random_degree):
+                        meat_classes[:2] == list(reversed(meat_classes[:2]))
+                    if check == 'b' and (meat_classes[-1] == min(meat_classes)
+                            and random.random() > random_degree):
+                        meat_classes[-2:] == list(reversed(meat_classes[-2:]))
+            assert len(set(meat_classes)) == 3
+            for j, c in enumerate(meat_classes):
+                old_value = (f << 4) | c
+                new_value = (i << 4) | j
+                meat_map[old_value] = new_value
+
+        assert sorted(meat_map.keys()) == sorted(meat_map.values())
+
+        for mmo in MonsterMeatObject.every:
+            if mmo.meat in meat_map:
+                mmo.meat = meat_map[mmo.meat]
+
+class MonsterEvolutionObject(TableObject):
+    def validate(self):
+        assert len(set(self.monster_indexes)) == 5
+        assert len(self.monster_indexes) == 16
+        assert self.monster_indexes == sorted(self.monster_indexes)
+        assert max(self.monster_indexes) - min(self.monster_indexes) == 4
+
+    def preclean(self):
+        # correcting errors in the original rom
+        if self.index == 6:
+            self.monster_indexes = [0x1E if i == 0xF5 else i
+                                    for i in self.monster_indexes]
+        if self.index == 19:
+            self.monster_indexes = [0x5F if i == 0x6F else i
+                                    for i in self.monster_indexes]
+        if self.index == 20:
+            self.monster_indexes = [0x64 if i == 0xF6 else i
+                                    for i in self.monster_indexes]
+        if self.index == 31:
+            self.monster_indexes = [0x9B if i == 0xF7 else i
+                                    for i in self.monster_indexes]
+
+    def cleanup(self):
+        self.validate()
+        monsters = [MonsterObject.get(i)
+                    for i in sorted(set(self.monster_indexes))]
+        levels = [m.level for m in monsters]
+        assert len(levels) == 5
+        assert levels == sorted(levels)
+        assert levels[-1] == 0xb
+        monster_indexes = []
+        for level in range(16):
+            candidates = [m for m in monsters if m.level <= level]
+            if not candidates:
+                candidates = [min(monsters, key=lambda c: c.level)]
+            monster_indexes.append(candidates[-1].index)
+        self.monster_indexes = monster_indexes
+        self.validate()
+
+
 class RobotStatObject(TableObject): pass
 
 
@@ -121,11 +234,12 @@ class FormationCountObject(TableObject):
 
 class MonsterObject(TableObject):
     def __repr__(self):
-        s = self.name
-        s += '\n{0:>5} {1:>3} {2:>3} {3:>3} {4:>3}'.format(
-                'HP', 'STR', 'DEF', 'AGI', 'MAN')
-        s += '\n{0:>5} {1:>3} {2:>3} {3:>3} {4:>3}'.format(
-                self.hp, self.strength, self.defense, self.agility, self.mana)
+        s = '{0:0>2X} {1}'.format(self.index, self.name)
+        s += '\n{5:>2} {0:>5} {1:>3} {2:>3} {3:>3} {4:>3}'.format(
+                'HP', 'STR', 'DEF', 'AGI', 'MAN', 'LV')
+        s += '\n{5:>2X} {0:>5} {1:>3} {2:>3} {3:>3} {4:>3}'.format(
+                self.hp, self.strength, self.defense,
+                self.agility, self.mana, self.level)
         probabilities = self.move_selection.probabilities
         for i, ai in enumerate(self.attribute_indexes):
             if i == 0:
@@ -138,6 +252,26 @@ class MonsterObject(TableObject):
             s += '\n  {0} {1}'.format(p, AttributeNameObject.get(ai).name)
         return s.strip()
 
+    @property
+    def meat(self):
+        return MonsterMeatObject.get(self.index)
+
+    def calculate_evolution(self, other):
+        new_family = (self.meat.meat_family + other.meat.meat_family + 6)
+        if other.meat.meat_family > 6:
+            new_family += 1
+        new_species = (new_family * 3) + 1
+        meat_classes = [self.meat.meat_class, other.meat.meat_class]
+        if 'A' in meat_classes:
+            new_species -= 1
+        if 'C' in meat_classes:
+            new_species += 1
+        new_species = new_species % len(MonsterEvolutionObject.every)
+        indexes = MonsterEvolutionObject.get(new_species).monster_indexes
+        level = max(self.level, other.level)
+        result = MonsterObject.get(indexes[level])
+        return result
+
     def read_data(self, filename, pointer=None):
         super(MonsterObject, self).read_data(filename, pointer)
         f = open(filename, 'r+b')
@@ -145,7 +279,12 @@ class MonsterObject(TableObject):
         self.attribute_indexes = []
         for i in range(self.num_attributes):
             self.attribute_indexes.append(ord(f.read(1)))
+        self.old_data['attribute_indexes'] = list(self.attribute_indexes)
         f.close()
+
+    @property
+    def level(self):
+        return MonsterLevelObject.get(self.index).level
 
     @property
     def move_selection(self):
@@ -157,6 +296,22 @@ class MonsterObject(TableObject):
         num_attributes = (self.misc_attributes & 0xf) + 1
         assert 1 <= num_attributes <= 8
         return num_attributes
+
+    @property
+    def is_human(self):
+        return (self.misc_attributes >> 4) == 0
+
+    @property
+    def is_mutant(self):
+        return (self.misc_attributes >> 4) == 1
+
+    @property
+    def is_robot(self):
+        return (self.misc_attributes >> 4) == 3
+
+    @property
+    def is_monster(self):
+        return (self.misc_attributes >> 4) == 2
 
     def set_num_attributes(self):
         num_attributes = len(self.attribute_indexes) - 1
@@ -268,15 +423,24 @@ class ItemPriceObject(TableObject):
 
     @cached_property
     def rank(self):
-        if 10 <= self.price <= 65535:
-            return self.price
-        uses = UsesObject.get(self.index).uses
-        if 1 <= uses < 99:
+        if 10 <= self.old_data['price'] <= 65535:
+            return self.old_data['price']
+        uses = UsesObject.get(self.index).old_data['uses']
+        if 1 <= uses <= 99:
             return 999999
         return -1
 
 
-class ShopObject(TableObject): pass
+class ShopObject(TableObject):
+    def __repr__(self):
+        s = 'SHOP {0:0>2X}\n'.format(self.index)
+        for i in self.items:
+            if i < 0xFF:
+                ipo = ItemPriceObject.get(i)
+                s += '  {0}\n'.format(ipo.name)
+            else:
+                s += '  --\n'
+        return s.strip()
 
 
 if __name__ == '__main__':
@@ -315,13 +479,28 @@ if __name__ == '__main__':
 
         for f in FormationCountObject.every:
             print f
-        '''
-
-        clean_and_write(ALL_OBJECTS)
 
         for m in MonsterObject.ranked:
             print(m)
             print()
+
+        for ip in ItemPriceObject.every:
+            print(ip)
+
+        for s in ShopObject.every:
+            print(s)
+            print()
+
+        for a in AttributeObject.every:
+            if a.is_buyable and a.is_equipped_on_monster:
+                print(a)
+
+        for m in MonsterObject.every:
+            print(m)
+            print()
+        '''
+
+        clean_and_write(ALL_OBJECTS)
 
         finish_interface()
 

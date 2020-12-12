@@ -1,1 +1,3 @@
-values,16,list
+# these values are related to DS level thresholds, i.e. 156AB for Fungus family, etc
+# in other words, this is the table that maps evolved level (0-15) to the appropriate species & member of the family
+monster_indexes,16,list
