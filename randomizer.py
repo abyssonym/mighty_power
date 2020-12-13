@@ -25,23 +25,63 @@ class VanillaObject(TableObject):
 
 
 class ChestObject(TableObject):
+    flag = 't'
+    flag_description = 'treasure chests'
+    custom_random_enable = 't'
+
+    banned_item_indexes = [0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d]
+
     @property
     def name(self):
-        return AttributeNameObject.get(self.contents).name
+        return self.item.name
+
+    @property
+    def item(self):
+        return AttributeObject.get(self.contents)
 
     @cached_property
     def rank(self):
         if not self.intershuffle_valid:
             return -1
-        return ItemPriceObject.get(self.contents).rank
+        return self.item.rank
 
     @property
     def contents(self):
         return self.contents_lowbyte | ((self.misc - 0xf9) << 8)
 
+    @classproperty
+    def valid_items(cls):
+        if hasattr(ChestObject, '_valid_items'):
+            return ChestObject._valid_items
+
+        ChestObject._valid_items = [
+            a for a in AttributeObject.every if a.index <= 0x7f
+            and a.index not in ChestObject.banned_item_indexes
+            and not a.get_bit('fixed')]
+
+        return ChestObject.valid_items
+
+    def set_contents(self, index):
+        self.contents_lowbyte = index & 0xff
+        self.misc = 0xf9 + (index >> 8)
+
     @property
     def intershuffle_valid(self):
-        return self.contents < 0xff
+        return self.item in self.valid_items
+
+    def mutate(self):
+        if not self.intershuffle_valid:
+            return
+
+        old_item = self.item
+        new_item = self.item.get_similar(
+            candidates=self.valid_items, random_degree=self.random_degree)
+        self.set_contents(new_item.index)
+        new_item = self.item
+
+    def cleanup(self):
+        if self.contents_lowbyte != self.old_data['contents_lowbyte']:
+            assert self.intershuffle_valid
 
 
 class MoveSelectionObject(TableObject):
@@ -58,7 +98,17 @@ class AttributeObject(TableObject):
 
     @property
     def rank(self):
-        return -1
+        if 0 <= self.index <= 0x7f and not self.get_bit('fixed'):
+            if self.index in ChestObject.banned_item_indexes:
+                return -1
+            if self.is_buyable:
+                return ItemPriceObject.get(self.index).rank
+            rank = 9999999
+            return rank
+        elif self.index <= 0xff:
+            return 0
+        else:
+            return -1
 
     @property
     def is_equipment(self):
@@ -170,7 +220,14 @@ class MonsterEvolutionObject(TableObject):
         self.validate()
 
 
-class RobotStatObject(TableObject): pass
+class RobotStatObject(TableObject):
+    @property
+    def power(self):
+        return self.misc_value & 0xf
+
+    @property
+    def boost_statuses(self):
+        return self.misc_value >> 4
 
 
 class MonsterLevelObject(TableObject):
@@ -375,7 +432,6 @@ class FormationCountObject(TableObject):
             for f in FormationCountObject.every:
                 if (hasattr(f, 'randomized') and f.randomized
                         and self.counts == f.counts):
-                    print('DUPLICATE {0:0>2X} {1:0>2X} {2}'.format(f.index, self.index, self.counts))
                     self.counts = []
                     break
 
@@ -595,12 +651,13 @@ class ItemPriceObject(TableObject):
 
     @cached_property
     def rank(self):
+        if self.index in ChestObject.banned_item_indexes:
+            return -1
+
         if 10 <= self.old_data['price'] <= 65535:
             return self.old_data['price']
-        uses = UsesObject.get(self.index).old_data['uses']
-        if 1 <= uses <= 99:
-            return 999999
-        return -1
+
+        return 999999
 
 
 class ShopObject(TableObject):
