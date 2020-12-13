@@ -1,4 +1,4 @@
-menu_targeting_flags,bit:use_battle use_field fixed menu_unk08 no_target target_enemy menu_unk40 attack_leader
+menu_targeting_flags,bit:use_battle use_field fixed menu_unk08 no_target target_enemy menu_unk40 melee
 counter_flags,bit:phys_counter p-skin mana_counter block_melee reflect aegis warning surprise
 property_flags,bit:helm armor gloves boots strong weak bonus robot
 effect,1

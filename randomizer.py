@@ -111,8 +111,26 @@ class AttributeObject(TableObject):
             return -1
 
     @property
-    def is_equipment(self):
+    def shop_item_class(self):
+        if self.is_weapon:
+            weapon_type = RobotStatObject.get(self.index).boost_statuses
+        else:
+            weapon_type = None
+        return (self.is_weapon, self.is_armor or self.is_shield, weapon_type)
+
+    @property
+    def is_weapon(self):
+        return (self.get_bit('use_battle') and self.get_bit('target_enemy')
+                and not self.get_bit('use_field'))
+
+    @property
+    def is_armor(self):
         return bool(self.property_flags & 0xf)
+
+    @property
+    def is_shield(self):
+        return (self.get_bit('use_battle') and self.get_bit('no_target')
+                and not self.get_bit('target_enemy'))
 
     @cached_property
     def is_buyable(self):
@@ -120,7 +138,7 @@ class AttributeObject(TableObject):
             return False
 
         for s in ShopObject.every:
-            if self.index in s.old_data['items']:
+            if self.index in s.old_data['item_indexes']:
                 return True
 
         return False
@@ -644,6 +662,12 @@ class MonsterNameObject(NameMixin): pass
 
 
 class ItemPriceObject(TableObject):
+    mutate_attributes = {'price': (0, 60000)}
+
+    @classproperty
+    def after_order(cls):
+        return [ShopObject]
+
     @property
     def name(self):
         return '{0:<11}: {1:>5}'.format(
@@ -659,17 +683,77 @@ class ItemPriceObject(TableObject):
 
         return 999999
 
+    def cleanup(self):
+        price = self.price * 2
+        magnitude = 0
+        while price >= 100:
+            price /= 10
+            magnitude += 1
+        price = int(round(price))
+        while magnitude > 0:
+            price *= 10
+            magnitude -= 1
+        self.price = int(round(price)) // 2
+
 
 class ShopObject(TableObject):
+    flag = 's'
+    flag_description = 'shops'
+    custom_random_enable = 's'
+
     def __repr__(self):
         s = 'SHOP {0:0>2X}\n'.format(self.index)
-        for i in self.items:
+        for i in self.item_indexes:
             if i < 0xFF:
                 ipo = ItemPriceObject.get(i)
                 s += '  {0}\n'.format(ipo.name)
             else:
                 s += '  --\n'
         return s.strip()
+
+    @property
+    def items(self):
+        return [AttributeObject.get(i) for i in self.item_indexes if i < 0xFF]
+
+    def randomize(self):
+        num_items = len(self.items)
+        num_items = mutate_normal(num_items, minimum=1, maximum=8,
+                                  random_degree=self.random_degree)
+        old_items = list(self.items)
+        new_items = []
+        for _ in range(500):
+            if len(new_items) == num_items:
+                break
+            buyable_check = not (random.random() < self.random_degree)
+            chosen_class = random.choice(old_items).shop_item_class
+            chosen_price = random.choice(old_items)
+            candidates = [a for a in AttributeObject.every
+                          if a.index <= 0x7f and a.rank >= 0
+                          and a.shop_item_class == chosen_class
+                          and a.is_buyable >= buyable_check]
+            candidates = [c for c in candidates if c not in new_items]
+            if not candidates:
+                continue
+            chosen = chosen_price.get_similar(
+                    candidates=candidates, random_degree=self.random_degree,
+                    override_outsider=True)
+            new_items.append(chosen)
+        else:
+            raise Exception('Unable to populate shop.')
+
+        for i in new_items:
+            if not i.is_buyable:
+                ItemPriceObject.get(i.index).price = 60000
+
+        self.item_indexes = [i.index for i in new_items]
+
+    def cleanup(self):
+        items = sorted(
+            self.items, key=lambda i: (ItemPriceObject.get(i.index).price,
+                                       i.index))
+        self.item_indexes = [i.index for i in items]
+        while len(self.item_indexes) < 8:
+            self.item_indexes.append(0xFF)
 
 
 if __name__ == '__main__':
