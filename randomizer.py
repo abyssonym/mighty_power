@@ -195,21 +195,34 @@ class UsesObject(TableObject):
 
 class StatGrowthObject(TableObject): pass
 class MutantSkillsObject(TableObject): pass
+class MonsterGraphicObject(TableObject): pass
 
 
 class FormationObject(TableObject):
+    flag = 'f'
+    flag_description = 'enemy formations'
+    custom_random_enable = 'f'
+
+    @classproperty
+    def after_order(cls):
+        return [FormationCountObject]
+
     @property
     def name(self):
         s = ','.join(MonsterNameObject.get(i).name for i in self.enemy_indexes)
         s += ' | {0} . {1}'.format(
-            FormationCountObject.get(self.unknown[0] & 0x1f).name,
-            FormationCountObject.get(self.unknown[1] & 0x1f).name)
+            FormationCountObject.get(self.counts[0] & 0x1f).name,
+            FormationCountObject.get(self.counts[1] & 0x1f).name)
         return s
 
     @property
+    def monsters(self):
+        return [MonsterObject.get(i) for i in self.enemy_indexes]
+
+    @property
     def fcounts(self):
-        return (FormationCountObject.get(self.unknown[0] & 0x1f),
-                FormationCountObject.get(self.unknown[1] & 0x1f))
+        return (FormationCountObject.get(self.counts[0] & 0x1f),
+                FormationCountObject.get(self.counts[1] & 0x1f))
 
     @cached_property
     def rank(self):
@@ -219,8 +232,86 @@ class FormationObject(TableObject):
                 rank += (count * MonsterObject.get(enemy_index).rank)
         return rank
 
+    def randomize_counts(self):
+        if self.index <= 0xf:
+            # boss formation
+            enumerated_fcounts = list(enumerate(self.fcounts))
+            random.shuffle(enumerated_fcounts)
+            aas = [self.enemy_indexes[2] == 0 and self.index > 0, False]
+            for ((i, fcount), aa) in zip(enumerated_fcounts, aas):
+                counts = fcount.old_data['counts']
+                candidates = [f for f in FormationCountObject.every
+                              if f.validate_boss(counts, allow_add=aa)]
+                if not candidates:
+                    chosen = fcount
+                else:
+                    chosen = random.choice(candidates)
+                self.counts[i] = chosen.index
+                if aa:
+                    old_monsters = [self.monsters[j]
+                                    for (j, c) in enumerate(counts) if c > 0]
+                    avg_rank = (sum([m.rank for m in old_monsters])
+                                / len(old_monsters))
+                    avg_hp = (sum([m.hp for m in old_monsters])
+                              / len(old_monsters))
+                    candidates = [m for m in MonsterObject.ranked
+                                  if m.intershuffle_valid
+                                  and m.rank < avg_rank
+                                  and m.hp < avg_hp]
+
+                    max_index = len(candidates) - 1
+                    randval = random.random()
+                    randomness = (1-self.random_degree)
+                    if randomness > 0:
+                        randval = randval ** (1 / randomness)
+                    else:
+                        randval = 0
+                    index = int(round((1-randval) * max_index))
+                    chosen = candidates[index]
+                    self.enemy_indexes[2] = chosen.index
+
+            return
+
+        for (i, fcount) in enumerate(self.fcounts):
+            counts = fcount.old_data['counts']
+            candidates = sorted(
+                FormationCountObject.every,
+                key=lambda fc: (fc.get_distance(counts), fc.signature))
+            max_index = len(candidates) - 1
+            randval = random.random()
+            if self.random_degree > 0:
+                randval = randval ** (1 / self.random_degree)
+            else:
+                randval = 0
+            assert 0 <= randval <= 1
+            index = int(round(randval * max_index))
+            chosen = candidates[index]
+            self.counts[i] = chosen.index
+            assert self.fcounts[i] is chosen
+
+    def randomize_monsters(self):
+        if self.index <= 0xf:
+            return
+
+        done_m = []
+        for (i, m) in enumerate(self.monsters):
+            while True:
+                new_m = m.get_similar(random_degree=self.random_degree)
+                if new_m not in done_m:
+                    break
+            done_m.append(new_m)
+            self.enemy_indexes[i] = new_m.index
+            assert self.monsters[i] is new_m
+
+    def randomize(self):
+        self.randomize_counts()
+        self.randomize_monsters()
+
 
 class FormationCountObject(TableObject):
+    flag = 'f'
+    custom_random_enable = 'f'
+
     @property
     def name(self):
         s = '/'.join(['%s-%s' % (c >> 4, c & 0xf) for c in self.counts])
@@ -230,6 +321,79 @@ class FormationCountObject(TableObject):
     def rank(self):
         return sum([c >> 4 for c in self.counts] +
                    [c & 0xf for c in self.counts])
+
+    def get_distance(self, other):
+        if isinstance(other, FormationCountObject):
+            other = other.counts
+
+        sqs1 = [((a & 0xf) - (b & 0xf))**2
+                for (a, b) in zip(self.counts, other)]
+        sqs2 = [((a >> 4) - (b >> 4))**2 for (a, b) in zip(self.counts, other)]
+        return sum(sqs1 + sqs2) ** 0.5
+
+    def validate_boss(self, other, allow_add=True):
+        if isinstance(other, FormationCountObject):
+            other = other.counts
+
+        for (i, (a, b)) in enumerate(zip(self.counts, other)):
+            if (b >> 4) == (b & 0xf) and b != a and (
+                    b > 0 or i < 2 or not allow_add):
+                return False
+            if b and not a:
+                return False
+
+        return True
+
+    def randomize(self):
+        super(FormationCountObject, self).randomize()
+        if 0x11 in self.counts[:2]:
+            return
+
+        if not (hasattr(FormationCountObject, 'left_boss_add') and
+                hasattr(FormationCountObject, 'right_boss_add')):
+            new_count = 0
+            while new_count < 0x10:
+                new_count = random.choice(random.choice(
+                    FormationCountObject.every).old_data['counts'])
+
+            if not hasattr(FormationCountObject, 'left_boss_add'):
+                self.counts = [0x11, 0, new_count]
+                FormationCountObject.left_boss_add = self
+                return
+
+            if not hasattr(FormationCountObject, 'right_boss_add'):
+                self.counts = [0, 0x11, new_count]
+                FormationCountObject.right_boss_add = self
+                return
+
+        while True:
+            self.counts = [
+                random.choice(random.choice(
+                    FormationCountObject.every).old_data['counts'])
+                for _ in range(3)]
+
+            for f in FormationCountObject.every:
+                if (hasattr(f, 'randomized') and f.randomized
+                        and self.counts == f.counts):
+                    print('DUPLICATE {0:0>2X} {1:0>2X} {2}'.format(f.index, self.index, self.counts))
+                    self.counts = []
+                    break
+
+            if not any([c >= 0x10 for c in self.counts]):
+                continue
+
+            break
+
+    def mutate(self):
+        for (i, c) in enumerate(self.counts):
+            subcounts = (c >> 4, c & 0xf)
+            final_counts = []
+            for sc in subcounts:
+                if sc >= 2:
+                    sc = mutate_normal(sc, 1, 9)
+                final_counts.append(sc)
+            low, high = sorted(final_counts)
+            self.counts[i] = (low << 4) | high
 
 
 class MonsterObject(TableObject):
@@ -253,8 +417,16 @@ class MonsterObject(TableObject):
         return s.strip()
 
     @property
+    def intershuffle_valid(self):
+        return self.graphic != 0 or self.index <= 0xb3
+
+    @property
     def meat(self):
         return MonsterMeatObject.get(self.index)
+
+    @property
+    def graphic(self):
+        return MonsterGraphicObject.get(self.index).graphic_index
 
     def calculate_evolution(self, other):
         new_family = (self.meat.meat_family + other.meat.meat_family + 6)
@@ -472,13 +644,10 @@ if __name__ == '__main__':
         counts = defaultdict(int)
         for f in FormationObject.every:
             print f
-            for u in f.unknown:
+            for u in f.counts:
                 counts[u & 0x1f] += 1
         print counts
         print sorted(counts, key=lambda k: counts[k])
-
-        for f in FormationCountObject.every:
-            print f
 
         for m in MonsterObject.ranked:
             print(m)
@@ -494,6 +663,9 @@ if __name__ == '__main__':
         for a in AttributeObject.every:
             if a.is_buyable and a.is_equipped_on_monster:
                 print(a)
+
+        for f in FormationObject.every:
+            print(f)
 
         for m in MonsterObject.every:
             print(m)

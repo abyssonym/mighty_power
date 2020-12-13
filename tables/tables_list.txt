@@ -9,6 +9,7 @@ MonsterLevelObject      monster_level_table.txt     33d50   256
 UsesObject              uses_table.txt              33e80   272
 StatGrowthObject        stat_growth_table.txt       33f90   2
 MutantSkillsObject      mutant_skills_table.txt     33fd0   32
+MonsterGraphicObject    monster_graphic_table.txt   36400   256
 FormationObject         formation_table.txt         36c70   128
 FormationCountObject    formation_count_table.txt   36ef0   32
 MonsterObject           monster_table.txt           36f80   256
