@@ -291,7 +291,8 @@ class MonsterEvolutionObject(TableObject):
         assert max(self.monster_indexes) - min(self.monster_indexes) == 4
 
     def preclean(self):
-        # correcting errors in the original rom
+        # correcting (possible) errors in the original rom
+        # basically changing it to use one canonical version of each monster
         if self.index == 6:
             self.monster_indexes = [0x1E if i == 0xF5 else i
                                     for i in self.monster_indexes]
@@ -389,7 +390,8 @@ class MonsterLevelObject(TableObject):
         meats = {m.meat.old_data['meat'] for m in MonsterObject.every}
         for meat in sorted(meats):
             monsters = [m for m in MonsterObject.every
-                        if m.meat.old_data['meat'] == meat and m.index <= 0xb3]
+                        if m.meat.old_data['meat'] == meat
+                        and m.index <= MonsterObject.MAX_EVOLVE_INDEX]
             if not monsters:
                 assert meat >= 0xc0
                 continue
@@ -426,7 +428,7 @@ class UsesObject(TableObject):
 
     @property
     def intershuffle_valid(self):
-        return self.uses < 0xFE
+        return self.uses <= 99
 
     def cleanup(self):
         if 11 <= self.uses <= 98:
@@ -701,6 +703,8 @@ class MonsterObject(TableObject):
 
     banned_monster_indexes = [0xFE, 0xFF] + list(range(0xF0, 0xF8))
 
+    MAX_EVOLVE_INDEX = 0xB3
+
     def __repr__(self):
         s = '{0:0>2X} {1}'.format(self.index, self.name)
         s += '\n{5:>2} {0:>5} {1:>3} {2:>3} {3:>3} {4:>3}'.format(
@@ -724,7 +728,8 @@ class MonsterObject(TableObject):
     def intershuffle_valid(self):
         if self.index in MonsterObject.banned_monster_indexes:
             return False
-        return self.graphic != 0 or self.index <= 0xb3
+        return (self.graphic != 0
+                or self.index <= MonsterObject.MAX_EVOLVE_INDEX)
 
     @property
     def meat(self):
@@ -733,8 +738,8 @@ class MonsterObject(TableObject):
     @property
     def family_key(self):
         key = self.meat.old_data['meat']
-        if key == 0 and self.index > 0xb3:
-            return 0xc0
+        if key == 0 and self.index > MonsterObject.MAX_EVOLVE_INDEX:
+            return 0xFFFF
         return key
 
     @cached_property
@@ -992,7 +997,7 @@ class MonsterObject(TableObject):
 
     def cleanup(self):
         self.set_num_attributes()
-        if self.index <= 0xb3:
+        if self.index <= MonsterObject.MAX_EVOLVE_INDEX:
             self.hp = min(self.hp, 999)
 
     def write_data(self, filename, pointer=None):
