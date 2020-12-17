@@ -92,6 +92,9 @@ class MoveSelectionObject(TableObject):
 
 
 class AttributeObject(TableObject):
+    flag = 'i'
+    custom_random_enable = 'i'
+
     @property
     def name(self):
         return AttributeNameObject.get(self.index).name
@@ -154,7 +157,8 @@ class AttributeObject(TableObject):
     @property
     def shop_item_class(self):
         if self.is_weapon:
-            weapon_type = RobotStatObject.get(self.index).boost_statuses
+            weapon_type = \
+                RobotStatObject.get(self.index).old_data['misc_value'] >> 4
         else:
             weapon_type = None
         return (self.is_weapon, self.is_armor or self.is_shield, weapon_type)
@@ -191,6 +195,30 @@ class AttributeObject(TableObject):
                 return True
 
         return False
+
+    def mutate(self):
+        if self.get_bit('fixed'):
+            return
+
+        candidates = None
+        if self.is_armor and self.multiplier_element <= 0x1f:
+            candidates = [
+                a for a in AttributeObject.every if a.is_armor
+                and a.multiplier_element <= 0x1f
+                and a.property_flags & 0xf == self.property_flags & 0xf]
+            max_power = 0x1f
+        elif self.is_weapon and 6 <= self.multiplier_element <= 0xf:
+            candidates = [
+                a for a in AttributeObject.every if a.is_weapon
+                and 6 <= a.multiplier_element <= 0xf
+                and a.shop_item_class == self.shop_item_class]
+            max_power = 0xf
+
+        if candidates and len(candidates) > 1:
+            other = self.get_similar(candidates)
+            power = other.multiplier_element & max_power
+            self.multiplier_element &= (0xFF ^ max_power)
+            self.multiplier_element |= power
 
 
 class MonsterMeatObject(TableObject):
@@ -282,6 +310,15 @@ class MonsterEvolutionObject(TableObject):
 
 
 class RobotStatObject(TableObject):
+    flag = 'i'
+    flag_description = 'item and equipment stats'
+    custom_random_enable = 'i'
+
+    @property
+    def intershuffle_valid(self):
+        return ((self.old_data['misc_value'] & 0xD0)
+                and not AttributeObject.get(self.index).get_bit('fixed'))
+
     @property
     def power(self):
         return self.misc_value & 0xf
@@ -289,6 +326,19 @@ class RobotStatObject(TableObject):
     @property
     def boost_statuses(self):
         return self.misc_value >> 4
+
+    def randomize(self):
+        if not self.intershuffle_valid:
+            return
+
+        other = self.get_similar()
+        power = mutate_normal(other.power, minimum=0, maximum=0xf)
+        if random.random() < (self.random_degree / 2):
+            power = int(round(power * 2 / 3))
+            count_statuses = bin(self.boost_statuses)
+            while bin(self.boost_statuses).count('1') == count_statuses:
+                new_status = random.choice([0x10, 0x40, 0x80])
+                self.misc_value |= new_status
 
 
 class MonsterLevelObject(TableObject):
@@ -351,9 +401,22 @@ class MonsterLevelObject(TableObject):
 
 
 class UsesObject(TableObject):
+    flag = 'i'
+    custom_random_enable = 'i'
+
+    mutate_attributes = {'uses': (1, 99)}
+
     @cached_property
     def rank(self):
         return self.uses
+
+    @property
+    def intershuffle_valid(self):
+        return self.uses < 0xFE
+
+    def cleanup(self):
+        if 11 <= self.uses <= 98:
+            self.uses = round(self.uses*2, -1) // 2
 
 
 class StatGrowthObject(TableObject): pass
@@ -990,6 +1053,9 @@ class MonsterNameObject(NameMixin): pass
 
 
 class ItemPriceObject(TableObject):
+    flag = 's'
+    custom_random_enable = 's'
+
     mutate_attributes = {'price': (0, 60000)}
 
     @classproperty
