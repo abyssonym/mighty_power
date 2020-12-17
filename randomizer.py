@@ -97,18 +97,59 @@ class AttributeObject(TableObject):
         return AttributeNameObject.get(self.index).name
 
     @property
-    def rank(self):
+    def use_power_rank(self):
         if 0 <= self.index <= 0x7f and not self.get_bit('fixed'):
+            return False
+        return True
+
+    @property
+    def rank(self):
+        if not self.use_power_rank:
             if self.index in ChestObject.banned_item_indexes:
                 return -1
             if self.is_buyable:
                 return ItemPriceObject.get(self.index).rank
-            rank = 9999999
+            rank = 9999999 + (ItemPriceObject.get(self.index).rank / 100000)
+            if self.power_rank >= 0:
+                rank += self.power_rank - 50
             return rank
         elif self.index <= 0xff:
-            return 0
+            return self.power_rank
         else:
             return -1
+
+    @property
+    def power_rank(self):
+        if hasattr(AttributeObject, '_cached_ranks'):
+            if self.index not in AttributeObject._cached_ranks:
+                return -1
+            return AttributeObject._cached_ranks[self.index]
+
+        AttributeObject._cached_ranks = {}
+        attribute_monster_ranks = defaultdict(list)
+        for m in MonsterObject.every:
+            if not m.intershuffle_valid:
+                continue
+            for i in m.old_data['attribute_indexes']:
+                attribute_monster_ranks[i].append(m.rank)
+
+        for i, ranks in attribute_monster_ranks.items():
+            avg = sum(ranks) / len(ranks)
+            AttributeObject._cached_ranks[i] = avg
+
+        return self.power_rank
+
+    def get_similar(self, candidates=None, override_outsider=False,
+                    random_degree=None, allow_intershuffle_invalid=False):
+        if candidates is not None:
+            candidates = [c for c in candidates
+                          if c.use_power_rank == self.use_power_rank]
+            if not candidates:
+                return self
+        return super(AttributeObject, self).get_similar(
+            candidates=candidates, override_outsider=override_outsider,
+            random_degree=random_degree,
+            allow_intershuffle_invalid=allow_intershuffle_invalid)
 
     @property
     def shop_item_class(self):
@@ -195,8 +236,10 @@ class MonsterMeatObject(TableObject):
         assert sorted(meat_map.keys()) == sorted(meat_map.values())
 
         for mmo in MonsterMeatObject.every:
-            if mmo.meat in meat_map:
+            if (mmo.meat in meat_map
+                    and MonsterObject.get(mmo.index).is_monster):
                 mmo.meat = meat_map[mmo.meat]
+
 
 class MonsterEvolutionObject(TableObject):
     def validate(self):
@@ -253,6 +296,12 @@ class MonsterLevelObject(TableObject):
     def move_selection_index(self):
         return self.moves_level >> 4
 
+    def set_move_selection_index(self, index):
+        assert index == index & 0xf
+        self.moves_level &= 0xf
+        self.moves_level |= (index << 4)
+        assert index == self.move_selection_index
+
     @property
     def level(self):
         return self.moves_level & 0xF
@@ -269,7 +318,13 @@ class UsesObject(TableObject):
 
 
 class StatGrowthObject(TableObject): pass
-class MutantSkillsObject(TableObject): pass
+class MutantSkillsObject(TableObject):
+    @property
+    def name(self):
+        a = AttributeObject.get(self.skill_index)
+        return '{0:0>2X} {1:0>2X} {2}'.format(self.index, a.index, a.name)
+
+
 class MonsterGraphicObject(TableObject): pass
 
 
@@ -381,6 +436,7 @@ class FormationObject(TableObject):
     def randomize(self):
         self.randomize_counts()
         self.randomize_monsters()
+        super(FormationObject, self).randomize()
 
 
 class FormationCountObject(TableObject):
@@ -471,6 +527,19 @@ class FormationCountObject(TableObject):
 
 
 class MonsterObject(TableObject):
+    flag = 'm'
+    flag_description = 'monsters and enemies'
+    custom_random_enable = 'm'
+
+    randomselect_attributes = ['strength', 'agility', 'defense']
+    mutate_attributes = {'hp': (1, 10000),
+                         'strength': None,
+                         'agility': None,
+                         'mana': None,
+                         'defense': None}
+
+    banned_monster_indexes = [0xFE, 0xFF] + list(range(0xF0, 0xF8))
+
     def __repr__(self):
         s = '{0:0>2X} {1}'.format(self.index, self.name)
         s += '\n{5:>2} {0:>5} {1:>3} {2:>3} {3:>3} {4:>3}'.format(
@@ -492,11 +561,126 @@ class MonsterObject(TableObject):
 
     @property
     def intershuffle_valid(self):
+        if self.index in MonsterObject.banned_monster_indexes:
+            return False
         return self.graphic != 0 or self.index <= 0xb3
 
     @property
     def meat(self):
         return MonsterMeatObject.get(self.index)
+
+    @property
+    def family_key(self):
+        key = self.meat.old_data['meat']
+        if key == 0 and self.index > 0xb3:
+            return 0xc0
+        return key
+
+    @cached_property
+    def family(self):
+        candidates = [m for m in MonsterObject.every
+                      if self.is_human == m.is_human
+                      and self.is_robot == m.is_robot
+                      and self.is_monster == m.is_monster]
+        if self.is_monster:
+            return [m for m in candidates
+                    if m.meat.old_data['meat'] == self.meat.old_data['meat']]
+        else:
+            return candidates
+
+    @cached_property
+    def extended_family(self):
+        candidates = [m for m in MonsterObject.every
+                      if self.is_human == m.is_human
+                      and self.is_robot == m.is_robot
+                      and self.is_monster == m.is_monster]
+        if self.is_monster:
+            return [m for m in candidates
+                    if (m.meat.old_data['meat'] & 0xf0)
+                    == (self.meat.old_data['meat'] & 0xf0)]
+        else:
+            return candidates
+
+    @property
+    def family_attributes(self):
+        if not hasattr(MonsterObject, '_famattr'):
+            MonsterObject._famattr = defaultdict(set)
+        if self.family_key in MonsterObject._famattr:
+            return MonsterObject._famattr[self.family_key]
+
+        for m in MonsterObject.every:
+            attributes = [AttributeObject.get(i)
+                          for i in m.old_data['attribute_indexes']]
+            attributes = [a for a in attributes if a.rank >= 0]
+            MonsterObject._famattr[m.family_key] |= set(attributes)
+
+        return self.family_attributes
+
+    @property
+    def extended_family_attributes(self):
+        if not hasattr(MonsterObject, '_exfamattr'):
+            MonsterObject._exfamattr = defaultdict(set)
+        if self.family_key >> 4 in MonsterObject._exfamattr:
+            return MonsterObject._exfamattr[self.family_key >> 4]
+
+        for m in MonsterObject.every:
+            attributes = [AttributeObject.get(i)
+                          for i in m.old_data['attribute_indexes']]
+            attributes = [a for a in attributes if a.rank >= 0]
+            MonsterObject._exfamattr[m.family_key >> 4] |= set(attributes)
+
+        return self.extended_family_attributes
+
+    @property
+    def new_family_attributes(self):
+        self.family_attributes, self.extended_family_attributes
+        if not hasattr(MonsterObject, '_newfamattr'):
+            MonsterObject._newfamattr = {}
+
+        if self.family_key in MonsterObject._newfamattr:
+            return MonsterObject._newfamattr[self.family_key]
+
+        if self.family_key >= 0xc0:
+            MonsterObject._newfamattr[self.family_key] = \
+                MonsterObject._famattr[self.family_key]
+            return self.new_family_attributes
+
+        num_attributes = len(self.family_attributes)
+        min_attributes = 8
+        max_attributes = max(
+            len(v) for (k, v) in MonsterObject._famattr.items()
+            if (k >> 4) <= 0xb)
+        num_attributes = mutate_normal(
+            num_attributes, minimum=min_attributes, maximum=max_attributes,
+            random_degree=self.random_degree)
+
+        new_attributes = []
+        while len(new_attributes) < num_attributes:
+            old_attribute = random.choice(sorted(self.family_attributes))
+            if random.random() > self.random_degree:
+                # family attributes
+                candidates = sorted(self.family_attributes)
+            elif random.random() > self.random_degree:
+                # extended family attributes
+                candidates = sorted(self.extended_family_attributes)
+            else:
+                # any attributes
+                candidates = {a for i in MonsterObject._exfamattr
+                              for a in MonsterObject._exfamattr[i] if i < 0xc}
+                candidates = sorted(candidates)
+
+            if len(new_attributes) == 0:
+                candidates = [c for c in candidates if c.get_bit('use_battle')]
+
+            new_attribute = old_attribute.get_similar(
+                candidates=candidates, random_degree=self.random_degree,
+                override_outsider=True)
+            if new_attribute not in new_attributes:
+                new_attributes.append(new_attribute)
+
+        assert any([a.get_bit('use_battle') for a in new_attributes])
+        MonsterObject._newfamattr[self.family_key] = sorted(new_attributes)
+        return self.new_family_attributes
 
     @property
     def graphic(self):
@@ -583,8 +767,73 @@ class MonsterObject(TableObject):
             return self.index
         return self.index / 5
 
+    def randomize_skills_and_attributes(self):
+        if self.index in MonsterObject.banned_monster_indexes:
+            return
+
+        old_attributes = [AttributeObject.get(i)
+                          for i in self.attribute_indexes]
+        new_attributes = [o for o in old_attributes if o.rank < 0
+                          and o.index != 0xFF]
+        old_attributes = [o for o in old_attributes if o.rank >= 0]
+        num_attributes = len({a for a in new_attributes + old_attributes})
+        num_attributes = mutate_normal(num_attributes, minimum=1, maximum=8,
+                                       random_degree=self.random_degree)
+
+        if not old_attributes:
+            return
+
+        while len(new_attributes) < num_attributes:
+            if len([a for a in new_attributes
+                    if a.get_bit('use_battle')]) == 0:
+                candidates = [a for a in self.new_family_attributes
+                              if a.get_bit('use_battle')]
+            elif len([a for a in new_attributes
+                      if a.get_bit('use_battle')]) == 7:
+                candidates = [a for a in self.new_family_attributes
+                              if not a.get_bit('use_battle')]
+            else:
+                candidates = self.new_family_attributes
+            candidates = [c for c in candidates
+                          if c not in new_attributes]
+            old_attribute = random.choice(old_attributes)
+            if not candidates:
+                if (old_attribute in new_attributes
+                        and len(new_attributes) >= self.attribute_indexes):
+                    break
+                new_attribute = old_attribute
+            else:
+                new_attribute = old_attribute.get_similar(
+                    candidates, random_degree=self.random_degree,
+                    override_outsider=True)
+
+            if new_attribute not in new_attributes:
+                new_attributes.append(new_attribute)
+
+        if not new_attributes:
+            return
+
+        use_battle = [a for a in new_attributes if a.get_bit('use_battle')]
+        random.shuffle(use_battle)
+        no_use = [a for a in new_attributes if not a.get_bit('use_battle')]
+        no_use = sorted(no_use)
+
+        candidates = [m for m in MoveSelectionObject.every
+                      if m.num_moves == len(use_battle)]
+        chosen = random.choice(candidates)
+        MonsterLevelObject.get(self.index).set_move_selection_index(
+            chosen.index)
+
+        self.attribute_indexes = [a.index for a in use_battle + no_use]
+
+    def randomize(self):
+        self.randomize_skills_and_attributes()
+        super(MonsterObject, self).randomize()
+
     def cleanup(self):
         self.set_num_attributes()
+        if self.index <= 0xb3:
+            self.hp = min(self.hp, 999)
 
     def write_data(self, filename, pointer=None):
         if not hasattr(MonsterObject, 'attacks_address'):
@@ -600,10 +849,6 @@ class MonsterObject(TableObject):
             f.close()
 
         assert len(self.attribute_indexes) == self.num_attributes
-        duplicates = [
-            m for m in MonsterObject.every if hasattr(m, '_attacks_written')
-            and m._attacks_written and self.attribute_indexes
-            == m.attribute_indexes[:self.num_attributes]]
 
         try:
             index = MonsterObject.attacks_data.index(
