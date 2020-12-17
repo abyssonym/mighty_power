@@ -20,3 +20,5 @@ MonsterNameObject       monster_name_table.txt      3eec0   256
 ItemPriceObject         item_price_table.txt        3f860   128
 ShopObject              shop_table.txt              3f9e0   24
 $monster_attacks_end    38000
+$title_text_1           2f8dd
+$title_text_2           2f8ef

@@ -17,6 +17,7 @@ from traceback import print_exc
 
 
 VERSION = 1
+ALL_OBJECTS = None
 
 
 class VanillaObject(TableObject):
@@ -1049,25 +1050,52 @@ class RNGObject(TableObject):
 class NameMixin(TableObject):
     @cached_property
     def name(self):
+        return self.decode(self.name_str)
+
+    @classmethod
+    def decode(cls, to_decode):
+        s = ''
+        for c in to_decode:
+            if c in cls.codemap:
+                s += cls.codemap[c]
+            else:
+                s += '<{0:0>2x}>'.format(c)
+        return s
+
+    @classmethod
+    def encode(cls, to_encode):
+        return bytes([NameMixin.codemap[s] for s in to_encode])
+
+    @classproperty
+    def codemap(cls):
+        if hasattr(NameMixin, '_codemap'):
+            return NameMixin._codemap
+
         codemap = {
             0xee: "'",
             0xf0: '.',
             0xf2: '-',
             0xff: ' ',
         }
-        s = ''
-        for c in self.name_str:
-            if 0xd4 <= c < 0xd4 + 26:
-                s += chr(ord('a') + c - 0xd4)
-            elif 0xb0 <= c < 0xb0 + 10:
-                s += '0123456789'[c - 0xb0]
-            elif 0xba <= c < 0xba + 26:
-                s += chr(ord('A') + c - 0xba)
-            elif c in codemap:
-                s += codemap[c]
-            else:
-                s += '<{0:0>2x}>'.format(c)
-        return s
+
+        for c in range(0xd4, 0xd4 + 26):
+            s = chr(ord('a') + c - 0xd4)
+            codemap[c] = s
+
+        for c in range(0xb0, 0xb0 + 10):
+            s = '0123456789'[c - 0xb0]
+            codemap[c] = s
+
+        for c in range(0xba, 0xba + 26):
+            s = chr(ord('A') + c - 0xba)
+            codemap[c] = s
+
+        for k, v in list(codemap.items()):
+            assert v not in codemap
+            codemap[v] = k
+
+        NameMixin._codemap = codemap
+        return cls.codemap
 
 
 class AttributeNameObject(NameMixin): pass
@@ -1172,6 +1200,37 @@ class ShopObject(TableObject):
             self.item_indexes.append(0xFF)
 
 
+def rewrite_title_screen():
+    title_len_1, title_len_2 = 17, 20
+    s1 = 'v{0} SN {1}'.format(VERSION, get_seed())
+
+    if any(hasattr(o, 'custom_random_degree') for o in ALL_OBJECTS):
+        random_degree = 'CUSTOM'
+    else:
+        random_degree = round(get_random_degree() ** 0.5, 2)
+    s2 = '{0} {1}'.format(random_degree, get_flags())
+
+    s1 = s1.strip()
+    s2 = s2.strip()
+    assert len(s1) <= title_len_1
+    assert len(s2) <= title_len_2
+    while len(s1) < title_len_1:
+        s1 = ' {0} '.format(s1)
+    s1 = s1[:title_len_1]
+    while len(s2) < title_len_2:
+        s2 = ' {0} '.format(s2)
+    s2 = s2[:title_len_2]
+    assert len(s1) == title_len_1
+    assert len(s2) == title_len_2
+
+    f = open(get_outfile(), 'r+b')
+    f.seek(addresses.title_text_1)
+    f.write(NameMixin.encode(s1))
+    f.seek(addresses.title_text_2)
+    f.write(NameMixin.encode(s2))
+    f.close()
+
+
 if __name__ == '__main__':
     try:
         print ('You are using the Final Fantasy Legend II '
@@ -1188,48 +1247,10 @@ if __name__ == '__main__':
         run_interface(ALL_OBJECTS, snes=False, codes=codes,
                       custom_degree=False)
 
-        '''
-        for c in ChestObject.every:
-            print c
-
-        for ano in AttributeNameObject.every:
-            print ano
-
-        #for i in ItemPriceObject.every:
-        #    print i
-
-        counts = defaultdict(int)
-        for f in FormationObject.every:
-            print f
-            for u in f.counts:
-                counts[u & 0x1f] += 1
-        print counts
-        print sorted(counts, key=lambda k: counts[k])
-
-        for m in MonsterObject.ranked:
-            print(m)
-            print()
-
-        for ip in ItemPriceObject.every:
-            print(ip)
-
-        for s in ShopObject.every:
-            print(s)
-            print()
-
-        for a in AttributeObject.every:
-            if a.is_buyable and a.is_equipped_on_monster:
-                print(a)
-
-        for f in FormationObject.every:
-            print(f)
-
-        for m in MonsterObject.every:
-            print(m)
-            print()
-        '''
-
         clean_and_write(ALL_OBJECTS)
+
+        if get_global_label() == 'FFL2_NA':
+            rewrite_title_screen()
 
         finish_interface()
 
