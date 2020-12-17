@@ -220,6 +220,20 @@ class AttributeObject(TableObject):
             self.multiplier_element &= (0xFF ^ max_power)
             self.multiplier_element |= power
 
+    def cleanup(self):
+        # weapons that hit specific races for critical damage
+        if self.is_weapon and self.effect in [0xC, 0xD, 0x1C]:
+            race = self.misc_hits
+            # fix coral sword bug
+            if race == 0x30 and self.index == 6:
+                race = 0x40
+
+            monsters = [m for m in MonsterObject.every
+                        if m.meat.old_data['meat'] & 0xF0 == race]
+            new_meat_codes = {m.meat.meat & 0xF0 for m in monsters}
+            if len(new_meat_codes) == 1:
+                self.misc_hits = list(new_meat_codes)[0]
+
 
 class MonsterMeatObject(TableObject):
     flag = 'e'
