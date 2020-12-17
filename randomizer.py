@@ -318,11 +318,46 @@ class UsesObject(TableObject):
 
 
 class StatGrowthObject(TableObject): pass
+
+
 class MutantSkillsObject(TableObject):
+    flag = 'u'
+    flag_description = 'mutant skills'
+    custom_random_enable = 'u'
+
     @property
     def name(self):
         a = AttributeObject.get(self.skill_index)
         return '{0:0>2X} {1:0>2X} {2}'.format(self.index, a.index, a.name)
+
+    @classmethod
+    def randomize_all(cls):
+        attributes = [AttributeObject.get(m.skill_index)
+                      for m in MutantSkillsObject.every]
+        new_attributes = []
+        for old_attribute in attributes:
+            candidates = [a for a in AttributeObject.every
+                          if a.get_bit('fixed') and a.rank >= 0
+                          and a not in new_attributes]
+            if old_attribute not in candidates:
+                assert old_attribute in new_attributes
+
+            template = random.choice(attributes)
+            temp = [c for c in candidates if
+                    c.get_bit('use_battle') == template.get_bit('use_battle')]
+            if temp:
+                candidates = temp
+
+            new_attribute = old_attribute.get_similar(
+                candidates, random_degree=MutantSkillsObject.random_degree,
+                override_outsider=True)
+            new_attributes.append(new_attribute)
+
+        assert len(new_attributes) == len(MutantSkillsObject.every)
+        for new, mu in zip(new_attributes, MutantSkillsObject.every):
+            mu.skill_index = new.index
+
+        super(MutantSkillsObject, cls).randomize_all()
 
 
 class MonsterGraphicObject(TableObject): pass
@@ -799,7 +834,7 @@ class MonsterObject(TableObject):
             old_attribute = random.choice(old_attributes)
             if not candidates:
                 if (old_attribute in new_attributes
-                        and len(new_attributes) >= self.attribute_indexes):
+                        and len(new_attributes) >= self.num_attributes):
                     break
                 new_attribute = old_attribute
             else:
@@ -814,12 +849,15 @@ class MonsterObject(TableObject):
             return
 
         use_battle = [a for a in new_attributes if a.get_bit('use_battle')]
+        if len(use_battle) >= 8:
+            use_battle = use_battle[:7]
         random.shuffle(use_battle)
         no_use = [a for a in new_attributes if not a.get_bit('use_battle')]
         no_use = sorted(no_use)
 
         candidates = [m for m in MoveSelectionObject.every
                       if m.num_moves == len(use_battle)]
+        assert 1 <= len(use_battle) <= 7
         chosen = random.choice(candidates)
         MonsterLevelObject.get(self.index).set_move_selection_index(
             chosen.index)
