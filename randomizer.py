@@ -1238,7 +1238,7 @@ def rewrite_title_screen():
 if __name__ == '__main__':
     try:
         print ('You are using the Final Fantasy Legend II '
-               'randomizer version %s.' % VERSION)
+               '"Mighty Power" randomizer version %s.' % VERSION)
         print
 
         ALL_OBJECTS = [g for g in globals().values()
@@ -1249,7 +1249,7 @@ if __name__ == '__main__':
                  }
 
         run_interface(ALL_OBJECTS, snes=False, codes=codes,
-                      custom_degree=False)
+                      custom_degree=True)
 
         clean_and_write(ALL_OBJECTS)
 

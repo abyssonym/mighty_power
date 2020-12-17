@@ -1,0 +1,32 @@
+Final Fantasy Legend 2 "Mighty Power" Randomizer
+Version:    1
+Date:       December 17, 2020
+URL:        https://www.abyssonym.com/
+            https://www.github.com/abyssonym
+Contact:    https://twitter.com/abyssonym
+
+--- HOW TO USE ---
+    Running the randomizer:
+        Windows users may use the executable file, "mighty_power.exe". Other users, please run "randomizer.py" using Python version 3.8+.
+
+    Compatible with the following roms for Nintendo Gameboy:
+        FFL2_NA     2bb0df1b672253aaa5f9caf9aab78224
+        SAGA2_JP    10c1170d5b5416a217eb66821060421d
+
+    This randomizer has the following flags:
+        e  Randomize monster evolutions.
+        f  Randomize enemy formations.
+        i  Randomize item and equipment stats.
+        k  Randomize monster skills and attributes.
+        m  Randomize monster and enemy stats.
+        s  Randomize shops.
+        t  Randomize treasure chests.
+        u  Randomize mutant skills.
+        v  Randomize nothing.
+
+    NOTE: Initial attributes for your main party are included in the 'k' flag.
+
+    Additionally, the level of randomness can be adjusted to your preference. A value of 0 changes virtually nothing, a value of 1 is extremely unbalanced (i.e., BabyWyrm can have final boss stats), and 0.5 is the recommended, default setting.
+
+--- REFERENCES ---
+    This game was already thoroughly documented before I got around to it. There's a spreadsheet going around containing a great deal of useful information; you can find one version of it at http://www.geocities.ws/kattdood/ffl2/ffl2.htm . There were a lot of things I had to suss out on my own, of course, but access to this data allowed me to create a more fully featured randomizer, so now I pass it on to you.
