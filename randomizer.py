@@ -348,7 +348,8 @@ class RobotStatObject(TableObject):
             return
 
         other = self.get_similar()
-        power = mutate_normal(other.power, minimum=0, maximum=0xf)
+        power = mutate_normal(other.power, minimum=0, maximum=0xf,
+                              wide=True)
         if random.random() < (self.random_degree / 2):
             power = int(round(power * 2 / 3))
             count_statuses = bin(self.boost_statuses)
@@ -402,7 +403,7 @@ class MonsterLevelObject(TableObject):
             new_levels = set([])
             for m in monsters[:4]:
                 new_level = mutate_normal(
-                    m.level, minimum=1, maximum=0xa,
+                    m.level, minimum=1, maximum=0xa, wide=True,
                     random_degree=MonsterLevelObject.random_degree)
                 new_levels.add(new_level)
 
@@ -677,7 +678,8 @@ class FormationCountObject(TableObject):
             final_counts = []
             for sc in subcounts:
                 if sc >= 2:
-                    sc = mutate_normal(sc, 1, 9)
+                    sc = mutate_normal(sc, 1, 9, wide=True,
+                                       random_degree=self.random_degree)
                 final_counts.append(sc)
             low, high = sorted(final_counts)
             self.counts[i] = (low << 4) | high
@@ -822,7 +824,7 @@ class MonsterObject(TableObject):
             if (k >> 4) <= 0xb)
         num_attributes = mutate_normal(
             num_attributes, minimum=min_attributes, maximum=max_attributes,
-            random_degree=self.random_degree)
+            random_degree=self.random_degree, wide=True)
 
         new_attributes = []
         while len(new_attributes) < num_attributes:
@@ -948,7 +950,8 @@ class MonsterObject(TableObject):
         old_attributes = [o for o in old_attributes if o.rank >= 0]
         num_attributes = len({a for a in new_attributes + old_attributes})
         num_attributes = mutate_normal(num_attributes, minimum=1, maximum=8,
-                                       random_degree=self.random_degree)
+                                       random_degree=self.random_degree,
+                                       wide=True)
 
         if not old_attributes:
             return
@@ -1162,7 +1165,8 @@ class ShopObject(TableObject):
     def randomize(self):
         num_items = len(self.items)
         num_items = mutate_normal(num_items, minimum=1, maximum=8,
-                                  random_degree=self.random_degree)
+                                  random_degree=self.random_degree,
+                                  wide=True)
         old_items = list(self.items)
         new_items = []
         for _ in range(500):
