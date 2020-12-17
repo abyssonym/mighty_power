@@ -1,0 +1,20 @@
+VanillaObject           empty.txt                   0       1
+MonsterSkillObject      empty.txt                   0       256
+ChestObject             chest_table.txt             chest_pointers.txt
+MoveSelectionObject     move_selection_table.txt    32f00   16
+AttributeObject         attribute_table.txt         32f80   272
+MonsterMeatObject       monster_meat_table.txt      33800   256
+MonsterEvolutionObject  monster_evolution_table.txt 33900   36
+RobotStatObject         robot_stat_table.txt        33b40   272
+MonsterLevelObject      monster_level_table.txt     33d50   256
+UsesObject              uses_table.txt              33e80   272
+StatGrowthObject        stat_growth_table.txt       33f90   2
+MutantSkillsObject      mutant_skills_table.txt     33fd0   32
+MonsterGraphicObject    monster_graphic_table.txt   36400   256
+FormationObject         formation_table.txt         36c70   128
+FormationCountObject    formation_count_table.txt   36ef0   32
+MonsterObject           monster_table.txt           36f80   256
+RNGObject               rng_table.txt               3c000   256
+ItemPriceObject         item_price_table.txt        3f860   128
+ShopObject              shop_table.txt              3f9e0   24
+$monster_attacks_end    38000

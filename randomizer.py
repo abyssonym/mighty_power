@@ -458,7 +458,10 @@ class MutantSkillsObject(TableObject):
                           if a.get_bit('fixed') and a.rank >= 0
                           and a not in new_attributes]
             if old_attribute not in candidates:
-                assert old_attribute in new_attributes
+                if old_attribute.get_bit('fixed'):
+                    # vanilla doesn't have non-fixed attributes
+                    # this is for romhack compatibility
+                    assert old_attribute in new_attributes
 
             template = random.choice(attributes)
             temp = [c for c in candidates if

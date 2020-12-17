@@ -1,1 +1,3 @@
 FFL2_NA     2bb0df1b672253aaa5f9caf9aab78224    tables_list.txt
+SAGA2_JP    10c1170d5b5416a217eb66821060421d    tables_list_jp.txt
+#FFL2_GTL2   0d52ac1b822688b8975bb7af5d2f02ab    tables_list.txt
