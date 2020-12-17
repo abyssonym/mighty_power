@@ -292,6 +292,9 @@ class RobotStatObject(TableObject):
 
 
 class MonsterLevelObject(TableObject):
+    flag = 'm'
+    custom_random_enable = 'm'
+
     @property
     def move_selection_index(self):
         return self.moves_level >> 4
@@ -306,9 +309,45 @@ class MonsterLevelObject(TableObject):
     def level(self):
         return self.moves_level & 0xF
 
+    def set_level(self, level):
+        assert level == level & 0xf
+        assert 1 <= level <= 0xb
+        self.moves_level &= 0xf0
+        self.moves_level |= level
+        assert self.level == level
+
     @cached_property
     def rank(self):
         return self.level
+
+    @classmethod
+    def randomize_all(cls):
+        meats = {m.meat.old_data['meat'] for m in MonsterObject.every}
+        for meat in sorted(meats):
+            monsters = [m for m in MonsterObject.every
+                        if m.meat.old_data['meat'] == meat and m.index <= 0xb3]
+            if not monsters:
+                assert meat >= 0xc0
+                continue
+            assert len(monsters) == 5
+            assert monsters[-1].level == 0xb
+            assert monsters == sorted(monsters, key=lambda m: m.level)
+            new_levels = set([])
+            for m in monsters[:4]:
+                new_level = mutate_normal(
+                    m.level, minimum=1, maximum=0xa,
+                    random_degree=MonsterLevelObject.random_degree)
+                new_levels.add(new_level)
+
+            while len(new_levels) < 4:
+                new_levels.add(random.randint(1, 0xa))
+            new_levels = sorted(new_levels)
+
+            for level, monster in zip(new_levels, monsters):
+                assert 1 <= level <= 0xa
+                MonsterLevelObject.get(monster.index).set_level(level)
+
+        super(MonsterLevelObject, cls).randomize_all()
 
 
 class UsesObject(TableObject):
@@ -561,9 +600,19 @@ class FormationCountObject(TableObject):
             self.counts[i] = (low << 4) | high
 
 
+class MonsterSkillObject(TableObject):
+    flag = 'k'
+    flag_description = 'monster skills and attributes'
+    custom_random_enable = 'k'
+
+    def randomize(self):
+        MonsterObject.get(self.index).randomize_skills_and_attributes()
+        super(MonsterSkillObject, self).randomize()
+
+
 class MonsterObject(TableObject):
     flag = 'm'
-    flag_description = 'monsters and enemies'
+    flag_description = 'monster and enemy stats'
     custom_random_enable = 'm'
 
     randomselect_attributes = ['strength', 'agility', 'defense']
@@ -863,10 +912,6 @@ class MonsterObject(TableObject):
             chosen.index)
 
         self.attribute_indexes = [a.index for a in use_battle + no_use]
-
-    def randomize(self):
-        self.randomize_skills_and_attributes()
-        super(MonsterObject, self).randomize()
 
     def cleanup(self):
         self.set_num_attributes()

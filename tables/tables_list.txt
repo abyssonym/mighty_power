@@ -1,4 +1,5 @@
 VanillaObject           empty.txt                   0       1
+MonsterSkillObject      empty.txt                   0       256
 ChestObject             chest_table.txt             chest_pointers.txt
 MoveSelectionObject     move_selection_table.txt    32f00   16
 AttributeObject         attribute_table.txt         32f80   272
