@@ -705,7 +705,7 @@ class MonsterObject(TableObject):
                          'mana': None,
                          'defense': None}
 
-    banned_monster_indexes = [0xFE, 0xFF] + list(range(0xF0, 0xF8))
+    banned_monster_indexes = [0xF4, 0xFE, 0xFF]
 
     MAX_EVOLVE_INDEX = 0xB3
 
